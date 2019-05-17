@@ -1,4 +1,4 @@
-import ConnectWiFi
+from main import ConnectWiFi
 import webrepl
 import time
 

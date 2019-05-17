@@ -1,8 +1,8 @@
 from mqtt_as import MQTTClient, config
 import uasyncio as asyncio
-from KMPDinoESP import KMPDinoESP
+from main.KMPDinoESP import KMPDinoESP
 from utime import ticks_ms, ticks_diff
-import tools
+from main import tools
 import ubinascii
 import dht as dht22
 import machine
