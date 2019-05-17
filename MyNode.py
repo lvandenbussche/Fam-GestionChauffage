@@ -6,6 +6,7 @@ import tools
 import ubinascii
 import dht as dht22
 import machine
+import time
 import gc
 
 
@@ -65,7 +66,7 @@ class KMPNode(MQTTClient):
 
 # ** Publish a message if WiFi and broker is up, else discard **
     async def _publish_msg(self, topic, msg):
-        self.dprint("Publishing message on topic {}: {}".format(topic, msg))
+        self.dprint("{} - Publishing message on topic {}: {}".format(time.time(), topic, msg))
         if not self.internet_outage:
             await self.publish(topic, msg)
         else:
