@@ -27,6 +27,9 @@ PIN_MOTION = 4
 MOTION = machine.Pin(PIN_MOTION, machine.Pin.IN)
 MOTION_INTERVAL = 10000
 
+# Initialise le Watchdog (Defaut 120 Sec)
+wdt = tools.WDT()
+
 
 class KMPNode(MQTTClient):
     def __init__(self):
@@ -53,9 +56,22 @@ class KMPNode(MQTTClient):
         self._start()
 
     def _start(self):
-        self.loop.create_task(self._coro_temp())
-        self.loop.create_task(self._coro_motion())
-        self.loop.run_until_complete(self._main_loop())
+        try:
+            coro_temp = self._coro_temp()
+            coro_motion = self._coro_motion()
+            coro_main = self._main_loop()
+            self.loop.create_task(coro_temp)
+            self.loop.create_task(coro_motion)
+            self.loop.run_until_complete(coro_main)
+        except KeyboardInterrupt:
+            self.dprint('Go ctrl-c')
+        finally:
+            self.dprint('Cancel (WDT)')
+            wdt.deinit()
+            self.dprint('Cancel (coro) ')
+            asyncio.cancel(coro_motion)
+            asyncio.cancel(coro_temp)
+            asyncio.cancel(coro_main)
 
     async def _connect_brooker(self):
         conn = False
@@ -111,47 +127,55 @@ class KMPNode(MQTTClient):
 # ** Coroutine function ***
 
     async def _coro_temp(self):
-        while True:
-            DHT.measure()
-            await asyncio.sleep(2)
-            self.temp = DHT.temperature()
-            self.hum = DHT.humidity()
-            await self._publish_msg(PUB_TOPIC_TEMP, str(self.temp))
-            await self._publish_msg(PUB_TOPIC_HUM, str(self.hum))
-            await asyncio.sleep(30)
+        try:
+            while True:
+                DHT.measure()
+                await asyncio.sleep(2)
+                self.temp = DHT.temperature()
+                self.hum = DHT.humidity()
+                await self._publish_msg(PUB_TOPIC_TEMP, str(self.temp))
+                await self._publish_msg(PUB_TOPIC_HUM, str(self.hum))
+                await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            return
 
     async def _coro_motion(self):
         motion_detected = False
-
-        while True:
-            if MOTION.value() == 1 and motion_detected == 0:
-                self.dprint('Motion Detected')
-                motion_detected = True
-                await self._publish_msg(PUB_TOPIC_MOTION, str(1))
-                start = self.tools.millis()
-            if MOTION.value() == 0 and motion_detected == 1:
-                if self.tools.millis() - start >= MOTION_INTERVAL:
-                    motion_detected = 0
-                    await self._publish_msg(PUB_TOPIC_MOTION, str(0))
-            await asyncio.sleep(1)
+        try:
+            while True:
+                if MOTION.value() == 1 and motion_detected == 0:
+                    self.dprint('Motion Detected')
+                    motion_detected = True
+                    await self._publish_msg(PUB_TOPIC_MOTION, str(1))
+                    start = self.tools.millis()
+                if MOTION.value() == 0 and motion_detected == 1:
+                    if self.tools.millis() - start >= MOTION_INTERVAL:
+                        motion_detected = 0
+                        await self._publish_msg(PUB_TOPIC_MOTION, str(0))
+                await asyncio.sleep(1)
+        except asyncio.CancelledError:
+            return
 
     async def _main_loop(self):
         await self._connect_brooker()
         mins = 0
-        while True:
-            gc.collect()  # For RAM stats.
-            mem_free = gc.mem_free()
-            mem_alloc = gc.mem_alloc()
-            try:
-                await self.publish_debug_msg("Uptime", mins)
-                await self.publish_debug_msg("Outages", self.internet_outages)
-                await self.publish_debug_msg("MemFree", mem_free)
-                await self.publish_debug_msg("MemAlloc", mem_alloc)
-            except Exception as e:
-                self.dprint("Exception occurred: ", e)
-            mins += 1
-
-            await asyncio.sleep(60)
+        try:
+            while True:
+                gc.collect()  # For RAM stats.
+                mem_free = gc.mem_free()
+                mem_alloc = gc.mem_alloc()
+                try:
+                    await self.publish_debug_msg("Uptime", mins)
+                    await self.publish_debug_msg("Outages", self.internet_outages)
+                    await self.publish_debug_msg("MemFree", mem_free)
+                    await self.publish_debug_msg("MemAlloc", mem_alloc)
+                except Exception as e:
+                    self.dprint("Exception occurred: ", e)
+                mins += 1
+                wdt.feed()
+                await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            return
 
 
 

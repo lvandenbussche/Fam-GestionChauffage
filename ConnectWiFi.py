@@ -47,3 +47,8 @@ class ConnectWifi:
         # Disable the built-in access point.
         self.ap.active(False)
         print("Disabled access point, network status is %s" % self.station.status())
+
+
+from ConnectWiFi import ConnectWifi
+t = ConnectWifi('101', 'wifigest')
+t.connect_wlan()
